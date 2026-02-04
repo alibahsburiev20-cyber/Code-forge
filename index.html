@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <title>Быстрый звонок</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body{font-family:system-ui;background:#111;color:#eee;display:flex;flex-direction:column;align-items:center;padding:2rem}
+    input,button{padding:.6em 1em;font-size:1rem;border-radius:6px;border:none}
+    button{background:#0d6efd;color:#fff;margin:.3em}
+    #remoteAudio{margin-top:1em;width:100%;max-width:400px}
+  </style>
+</head>
+<body>
+
+  <h2 id="title">Ваша комната: <span id="room">----</span></h2>
+  <input id="code" placeholder="Введите 4 цифры собеседника"/>
+  <button id="joinBtn">Позвонить</button>
+  <button id="hangBtn" hidden>Завершить</button>
+  <audio id="remoteAudio" autoplay></audio>
+
+  <script type="module">
+    /* ---------- 1. Генерируем комнату ---------- */
+    const params = new URLSearchParams(location.search);
+    let room = params.get('r');
+    if(!room){
+      room = Math.floor(1000 + Math.random()*9000);      // 4 случайные цифры
+      history.replaceState({},'','?r='+room);
+    }
+    document.getElementById('room').textContent = room;
+
+    /* ---------- 2. Сигналинг через FireBase RealTime (без ключа) ---------- */
+    const DB = `https://webrtc-temp-default-rtdb.firebaseio.com/${room}.json`;
+    async function send(msg){ await fetch(DB, {method:'PUT', body:JSON.stringify(msg)}) }
+    async function poll(){ 
+      const r = await fetch(DB); 
+      const v = await r.json(); 
+      if(v && v.type) handle(v);
+    }
+    let polling = setInterval(poll, 1000);
+
+    /* ---------- 3. WebRTC ---------- */
+    let pc, localStream;
+    const cfg = {iceServers:[{urls:'stun:stun.l.google.com:19302'}]};
+
+    async function start(isCaller){
+      localStream = await navigator.mediaDevices.getUserMedia({audio:true});
+      pc = new RTCPeerConnection(cfg);
+      localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
+      pc.ontrack = e => document.getElementById('remoteAudio').srcObject = e.streams[0];
+      pc.onicecandidate = e => { if(e.candidate) send({type:'ice', candidate:e.candidate}); };
+
+      if(isCaller){
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        send({type:'offer', sdp:offer});
+      }
+    }
+    async function handle(msg){
+      if(msg.type==='offer'){
+        await start(false);
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        send({type:'answer', sdp:answer});
+      }
+      if(msg.type==='answer'){
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      }
+      if(msg.type==='ice' && msg.candidate){
+        await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+      }
+    }
+    document.getElementById('joinBtn').onclick = ()=> start(true);
+    document.getElementById('hangBtn').onclick = ()=> location.reload();
+  </script>
+</body>
+</html>

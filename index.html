@@ -1,124 +1,40 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>QR + Сокращатель</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      background: #0f0f17;
-      color: #e0e0ff;
-      margin: 0;
-      padding: 20px;
-      min-height: 100vh;
-    }
-    .container { max-width: 480px; margin: 0 auto; }
-    h1 { font-size: 1.7rem; text-align: center; margin: 0.5em 0 1.2em; color: #a5b4fc; }
-    input {
-      width: 100%;
-      padding: 14px;
-      font-size: 1.1rem;
-      border: 1px solid #444;
-      border-radius: 8px;
-      background: #1e1e38;
-      color: white;
-      margin: 12px 0;
-      box-sizing: border-box;
-    }
-    button {
-      background: #7c3aed;
-      color: white;
-      border: none;
-      padding: 14px 28px;
-      font-size: 1.05rem;
-      border-radius: 8px;
-      cursor: pointer;
-      margin: 8px;
-    }
-    button:hover { background: #9f7aea; }
-    .qr { 
-      background: white; 
-      padding: 16px; 
-      border-radius: 12px; 
-      margin: 20px auto; 
-      text-align: center; 
-      display: inline-block;
-    }
-    #result { 
-      word-break: break-all; 
-      background: #1e1e38; 
-      padding: 14px; 
-      border-radius: 8px; 
-      margin: 16px 0; 
-      font-size: 1.1rem;
-    }
-    .center { text-align: center; }
-  </style>
+    <title>Chat Roulette Application</title>
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+
+        function startRecording() {
+            navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.start();
+
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    if (audioBlob.size > 10485760) { // 10 MB size limit
+                        alert('File too large! Must be less than 10MB.');
+                        return;
+                    }
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+                    audio.play();
+                };
+
+                setTimeout(() => {
+                    mediaRecorder.stop();
+                }, 5000); // Stop recording after 5 seconds
+            });
+        }
+    </script>
 </head>
 <body>
-
-<div class="container">
-  <h1>QR-код и сокращатель</h1>
-
-  <input type="text" id="url" placeholder="Вставьте ссылку сюда..." autofocus>
-  
-  <div class="center">
-    <button onclick="shortenAndQR()">Создать QR + сократить</button>
-  </div>
-
-  <div id="result"></div>
-  <div class="center">
-    <div id="qrcode" class="qr"></div>
-  </div>
-</div>
-
-<script>
-async function shortenAndQR() {
-  const input = document.getElementById('url');
-  const url = input.value.trim();
-  
-  if (!url || !url.startsWith('http')) {
-    alert('Введите корректную ссылку (https://...)');
-    return;
-  }
-
-  // Показываем, что идёт процесс
-  document.getElementById('result').innerHTML = 'Сокращаем...';
-  document.getElementById('qrcode').innerHTML = '';
-
-  try {
-    // Используем бесплатный публичный сервис (tinyurl)
-    const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`);
-    const shortUrl = await res.text();
-
-    // Показываем результат
-    document.getElementById('result').innerHTML = 
-      `<strong>Короткая ссылка:</strong><br>${shortUrl}`;
-
-    // Генерируем QR-код
-    new QRCode(document.getElementById('qrcode'), {
-      text: shortUrl,
-      width: 220,
-      height: 220,
-      colorDark: "#000000",
-      colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.H
-    });
-
-  } catch (e) {
-    document.getElementById('result').innerHTML = 'Ошибка сокращения. Используем оригинальную ссылку.';
-    
-    // QR на оригинальную ссылку как запасной вариант
-    new QRCode(document.getElementById('qrcode'), {
-      text: url,
-      width: 220,
-      height: 220
-    });
-  }
-}
-</script>
-
+    <h1>Welcome to the Chat Roulette Application</h1>
+    <button onclick="startRecording()">Start Recording</button>
 </body>
 </html>

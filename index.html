@@ -1,40 +1,135 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Chat Roulette Application</title>
-    <script>
-        let mediaRecorder;
-        let audioChunks = [];
-
-        function startRecording() {
-            navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-                mediaRecorder = new MediaRecorder(stream);
-                mediaRecorder.start();
-
-                mediaRecorder.ondataavailable = event => {
-                    audioChunks.push(event.data);
-                };
-
-                mediaRecorder.onstop = () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                    if (audioBlob.size > 10485760) { // 10 MB size limit
-                        alert('File too large! Must be less than 10MB.');
-                        return;
-                    }
-                    const audioUrl = URL.createObjectURL(audioBlob);
-                    const audio = new Audio(audioUrl);
-                    audio.play();
-                };
-
-                setTimeout(() => {
-                    mediaRecorder.stop();
-                }, 5000); // Stop recording after 5 seconds
-            });
-        }
-    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Wallet</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #wallet { margin-bottom: 20px; }
+        button { padding: 10px; margin: 5px; }
+        input { padding: 5px; margin: 5px; }
+        .qr { display: inline-block; margin: 10px; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+    <script src="https://unpkg.com/tonweb@0.0.61/dist/tonweb.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
-    <h1>Welcome to the Chat Roulette Application</h1>
-    <button onclick="startRecording()">Start Recording</button>
+    <h1>Crypto Wallet (USDT on ETH, TON)</h1>
+    
+    <div id="wallet">
+        <h2>Generate Wallet</h2>
+        <button onclick="generateWallet()">Generate</button>
+        <p id="address"></p>
+        <p id="privateKey"></p>
+        <div id="ethQR" class="qr"></div>
+        <div id="tonQR" class="qr"></div>
+    </div>
+    
+    <div id="balance">
+        <h2>Check Balance</h2>
+        <button onclick="checkBalance()">Check</button>
+        <p id="ethBalance"></p>
+        <p id="tonBalance"></p>
+    </div>
+    
+    <div id="send">
+        <h2>Send</h2>
+        <select id="coin">
+            <option value="usdt">USDT (ETH)</option>
+            <option value="ton">TON</option>
+        </select>
+        <input id="to" placeholder="To Address">
+        <input id="amount" placeholder="Amount">
+        <button onclick="sendTransaction()">Send</button>
+        <p id="txStatus"></p>
+    </div>
+
+    <script>
+        let web3, tonweb, account, tonWallet, keyPair;
+
+        async function init() {
+            web3 = new Web3('https://mainnet.infura.io/v3/66beeca713d042e6a1b9d67c63b63f59');
+            tonweb = new TonWeb(new TonWeb.HttpProvider('https://toncenter.com/api/v2/jsonRPC'));
+        }
+
+        async function generateWallet() {
+            account = web3.eth.accounts.create();
+            const seed = tonweb.utils.newSeed();
+            keyPair = tonweb.utils.keyPairFromSeed(seed);
+            tonWallet = await tonweb.wallet.create({ publicKey: keyPair.publicKey });
+            const tonAddress = await tonWallet.getAddress();
+
+            document.getElementById('address').innerText = `ETH Address: ${account.address}\nTON Address: ${tonAddress.toString(true, true, true)}`;
+            document.getElementById('privateKey').innerText = `Private Key (ETH): ${account.privateKey} (Keep secret!)\nSeed (TON): ${tonweb.utils.bytesToHex(seed)} (Keep secret!)`;
+
+            new QRCode(document.getElementById("ethQR"), {
+                text: account.address,
+                width: 128,
+                height: 128
+            });
+            new QRCode(document.getElementById("tonQR"), {
+                text: tonAddress.toString(true, true, true),
+                width: 128,
+                height: 128
+            });
+        }
+
+        async function checkBalance() {
+            if (!account) return alert('Generate wallet first');
+            
+            const ethBal = await web3.eth.getBalance(account.address);
+            document.getElementById('ethBalance').innerText = `ETH Balance: ${web3.utils.fromWei(ethBal, 'ether')} ETH`;
+
+            const usdtContract = new web3.eth.Contract(USDT_ABI, '0xdAC17F958D2ee523a2206206994597C13D831ec7');
+            const usdtBal = await usdtContract.methods.balanceOf(account.address).call();
+            document.getElementById('ethBalance').innerText += `\nUSDT Balance: ${usdtBal / 1e6}`;
+
+            const tonBal = await tonweb.provider.getBalance(tonWallet.address);
+            document.getElementById('tonBalance').innerText = `TON Balance: ${tonBal / 1e9} TON`;
+        }
+
+        async function sendTransaction() {
+            if (!account) return alert('Generate wallet first');
+            
+            const coin = document.getElementById('coin').value;
+            const to = document.getElementById('to').value;
+            const amount = document.getElementById('amount').value;
+
+            document.getElementById('txStatus').innerText = 'Sending...';
+
+            try {
+                if (coin === 'usdt') {
+                    const usdtContract = new web3.eth.Contract(USDT_ABI, '0xdAC17F958D2ee523a2206206994597C13D831ec7');
+                    const data = usdtContract.methods.transfer(to, amount * 1e6).encodeABI();
+                    const tx = {
+                        to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+                        data,
+                        gas: await web3.eth.estimateGas({ from: account.address, to: '0xdAC17F958D2ee523a2206206994597C13D831ec7', data }),
+                    };
+                    const signed = await web3.eth.accounts.signTransaction(tx, account.privateKey);
+                    const receipt = await web3.eth.sendSignedTransaction(signed.rawTransaction);
+                    document.getElementById('txStatus').innerText = `USDT Tx: ${receipt.transactionHash}`;
+                } else if (coin === 'ton') {
+                    const query = await tonWallet.methods.transfer({
+                        secretKey: keyPair.secretKey,
+                        toAddress: to,
+                        amount: TonWeb.utils.toNano(amount),
+                        seqno: await tonWallet.methods.seqno().call(),
+                        payload: '',
+                        sendMode: 3
+                    }).send();
+                    document.getElementById('txStatus').innerText = `TON Tx sent`;
+                }
+            } catch (e) {
+                document.getElementById('txStatus').innerText = `Error: ${e.message}`;
+            }
+        }
+
+        const USDT_ABI = [{"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"type":"function"},{"constant":false,"inputs":[{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"type":"function"}];
+
+        init();
+    </script>
 </body>
 </html>
